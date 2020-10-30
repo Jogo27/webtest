@@ -9,23 +9,24 @@ func LoginHandler(wr http.ResponseWriter, req *http.Request) {
   userName := req.FormValue("login")
   if userName == "" {
     http.Error(wr, "No login", http.StatusBadRequest)
+    return
   }
 
   session, err := NewSession(req)
   if err != nil {
     http.Error(wr, "NewSession", http.StatusInternalServerError)
+    return
   }
 
-  session.Values["user"] = userName
-  if session.Save(req, wr) != nil {
+  session.SetUser(userName)
+  if session.Save(wr, req) != nil {
     http.Error(wr, "session.Save", http.StatusInternalServerError)
+    return
   }
 
-  id, ok := session.Values["id"].(string)
-  if !ok {
-    http.Error(wr, "conversion", http.StatusInternalServerError)
-  }
+  id := session.Id()
   if _, err := io.WriteString(wr, id + "\n"); err != nil {
     http.Error(wr, "WriteString", http.StatusInternalServerError)
+    return
   }
 }

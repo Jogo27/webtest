@@ -3,14 +3,73 @@ package main
 import (
   "crypto/rand"
   "encoding/base64"
+  "errors"
+  "log"
   "net/http"
+  "path"
+  "strings"
+  "time"
 
   gs "github.com/gorilla/sessions"
 )
 
-const sessionName = "s";
+type Session struct {
+  session *gs.Session
+}
+
+func (self Session) stringValue(key string) string {
+  if self.session == nil {
+    return ""
+  }
+
+  unconverted, ok := self.session.Values[key]
+  if !ok {
+    return ""
+  }
+
+  ret, ok := unconverted.(string)
+  if !ok {
+    return ""
+  }
+
+  return ret
+}
+
+func (self Session) Id() string {
+  return self.stringValue(sessionKeyId)
+}
+
+func (self Session) User() string {
+  return self.stringValue(sessionKeyUser)
+}
+
+func (self Session) SetUser(user string) {
+  self.session.Values[sessionKeyUser] = user
+}
+
+func (self Session) Save(wr http.ResponseWriter, req *http.Request) (err error) {
+  err = self.session.Save(req, wr)
+  if err != nil {
+    log.Printf("Error saving session: %v", err)
+  }
+  return
+}
+
+const (
+  sessionName = "s"
+  sessionKeyId = "id"
+  sessionKeyUser = "usr"
+  sessionKeyDeadline = "dl"
+
+  sessionMaxAge = 20
+  sessionGraceTime = 2
+)
 
 var store = gs.NewCookieStore([]byte("flubluland_start_padding********"))
+
+func init() {
+  store.Options.MaxAge = sessionMaxAge
+}
 
 func randomShortId() (string, error) {
 
@@ -22,18 +81,8 @@ func randomShortId() (string, error) {
   return base64.URLEncoding.EncodeToString(b), nil
 }
 
-/*
-func reduceEqual(a, b []string) {
-  i := 0
-  for la, lb := len(a), len(b); i < la && i < lb && a[i] == b[i]; i++ {
-  }
-  b = b[i:]
-}
-*/
-
-
-func NewSession(req *http.Request) (session *gs.Session, err error) {
-  session, err = store.New(req, sessionName)
+func NewSession(req *http.Request) (ret Session, err error) {
+  ret.session, err = store.New(req, sessionName)
   if err != nil {
     return
   }
@@ -42,17 +91,84 @@ func NewSession(req *http.Request) (session *gs.Session, err error) {
   if err != nil {
     return
   }
-  session.Values["id"] = id
+  ret.session.Values[sessionKeyId] = id
+  ret.session.Values[sessionKeyDeadline] = time.Now().Unix() + sessionMaxAge + sessionGraceTime
   return
 }
 
-/*
-func CheckSession(req *http.Request, action []string) (path []string, session gs.Session, err error) {
-  session, err = store.Get(req, sessionName)
+func CheckSession(req *http.Request, basePath string) (remainingPath []string, ret Session, err error) {
+  ret.session, err = store.Get(req, sessionName)
+  if ret.session.IsNew {
+    err = errors.New("Session not found")
+  }
   if err != nil {
     return
   }
 
+  err = checkSessionDeadline(ret)
+  if err != nil {
+    return
+  }
 
+  remainingPath, err = chechSessionPath(basePath, req.URL.Path, ret.Id())
+  return
 }
-*/
+
+func checkSessionDeadline(ret Session) error {
+  if ret.session == nil {
+    return errors.New("No session")
+  }
+
+  unconverted, ok := ret.session.Values[sessionKeyDeadline]
+  if !ok {
+    return errors.New("No deadline")
+  }
+
+  deadline, ok := unconverted.(int64)
+  if !ok {
+    return errors.New("Conversion error")
+  }
+
+  log.Printf("Deadline %d vs now %d", deadline, time.Now().Unix())
+
+  if time.Now().Unix() > deadline {
+    return errors.New("Too late")
+  }
+
+  return nil
+}
+  
+func chechSessionPath(basePath string, reqPath string, id string) (remainingPath []string, err error) {
+  actionPath := append(strings.Split(path.Clean(basePath), "/"), id)
+  cleanReqPath := path.Clean(reqPath)
+  remainingPath = strings.Split(cleanReqPath, "/")
+  if cleanReqPath[0] == '/' {
+    remainingPath = remainingPath[1:]
+  }
+
+  log.Printf("action: %v", actionPath)
+  log.Printf("remain: %v", remainingPath)
+  
+  lenRem := len(remainingPath)
+  skip := 0
+  for ; skip < lenRem && remainingPath[skip] != actionPath[0]; skip++ {
+  }
+  if skip == lenRem {
+    err = errors.New("Wrong request path")
+    log.Printf("first action element %s not found", actionPath[0])
+    return
+  }
+
+  lenAction := len(actionPath)
+  i := 1
+  for ; i < lenAction && skip + i < lenRem && remainingPath[skip + i] == actionPath[i]; i++ {
+  }
+  if (i != lenAction) {
+    err = errors.New("Wrong request path")
+    log.Printf("action element %s not found", actionPath[i])
+    return
+  }
+
+  remainingPath = remainingPath[skip+i:]
+  return
+}
