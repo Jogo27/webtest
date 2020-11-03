@@ -4,6 +4,7 @@ import (
   "crypto/rand"
   "encoding/base64"
   "errors"
+  "fmt"
   "log"
   "net/http"
   "path"
@@ -99,7 +100,7 @@ func NewSession(req *http.Request) (ret Session, err error) {
 func CheckSession(req *http.Request, basePath string) (remainingPath []string, ret Session, err error) {
   ret.session, err = store.Get(req, sessionName)
   if ret.session.IsNew {
-    err = errors.New("Session not found")
+    err = NewHttpError(http.StatusForbidden, "Unauthorized", "session not found")
   }
   if err != nil {
     return
@@ -110,35 +111,34 @@ func CheckSession(req *http.Request, basePath string) (remainingPath []string, r
     return
   }
 
-  remainingPath, err = chechSessionPath(basePath, req.URL.Path, ret.Id())
+  remainingPath, err = checkSessionPath(basePath, req.URL.Path, ret.Id())
   return
 }
 
 func checkSessionDeadline(ret Session) error {
   if ret.session == nil {
+    // Should never happend
     return errors.New("No session")
   }
 
   unconverted, ok := ret.session.Values[sessionKeyDeadline]
   if !ok {
-    return errors.New("No deadline")
+    return NewHttpError(http.StatusForbidden, "Unauthorized", "no deadline in the session cookie")
   }
 
   deadline, ok := unconverted.(int64)
   if !ok {
-    return errors.New("Conversion error")
+    return NewHttpError(http.StatusForbidden, "Unauthorized", "the deadline in the session cookie has wrong type")
   }
 
-  log.Printf("Deadline %d vs now %d", deadline, time.Now().Unix())
-
   if time.Now().Unix() > deadline {
-    return errors.New("Too late")
+    return NewHttpError(http.StatusForbidden, "Unauthorized", "the session cookie has expired")
   }
 
   return nil
 }
   
-func chechSessionPath(basePath string, reqPath string, id string) (remainingPath []string, err error) {
+func checkSessionPath(basePath string, reqPath string, id string) (remainingPath []string, err error) {
   actionPath := append(strings.Split(path.Clean(basePath), "/"), id)
   cleanReqPath := path.Clean(reqPath)
   remainingPath = strings.Split(cleanReqPath, "/")
@@ -146,16 +146,13 @@ func chechSessionPath(basePath string, reqPath string, id string) (remainingPath
     remainingPath = remainingPath[1:]
   }
 
-  log.Printf("action: %v", actionPath)
-  log.Printf("remain: %v", remainingPath)
-  
   lenRem := len(remainingPath)
   skip := 0
   for ; skip < lenRem && remainingPath[skip] != actionPath[0]; skip++ {
   }
   if skip == lenRem {
-    err = errors.New("Wrong request path")
-    log.Printf("first action element %s not found", actionPath[0])
+    err = NewHttpError(http.StatusForbidden, "Unauthorized",
+      fmt.Sprintf("first path element %s not found", actionPath[0]))
     return
   }
 
@@ -164,8 +161,8 @@ func chechSessionPath(basePath string, reqPath string, id string) (remainingPath
   for ; i < lenAction && skip + i < lenRem && remainingPath[skip + i] == actionPath[i]; i++ {
   }
   if (i != lenAction) {
-    err = errors.New("Wrong request path")
-    log.Printf("action element %s not found", actionPath[i])
+    err = NewHttpError(http.StatusForbidden, "Unauthorized",
+      fmt.Sprintf("path element %s not found", actionPath[i]))
     return
   }
 

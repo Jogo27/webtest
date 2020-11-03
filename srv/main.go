@@ -31,7 +31,7 @@ func dumpHandler(resp http.ResponseWriter, req *http.Request) {
 }
 
 func main() {
-  http.HandleFunc("/", dumpHandler)
+  http.Handle("/", http.FileServer(http.Dir("angular/app/dist/app")))
   http.HandleFunc("/login", LoginHandler)
   http.HandleFunc("/greet/", GreetHandler)
   http.ListenAndServe(":8080", nil)
