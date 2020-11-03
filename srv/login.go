@@ -2,12 +2,14 @@ package main
 
 import (
   "io"
+  "log"
   "net/http"
 )
 
 func LoginHandler(wr http.ResponseWriter, req *http.Request) {
   userName := req.FormValue("login")
   if userName == "" {
+    log.Println("No login")
     http.Error(wr, "No login", http.StatusBadRequest)
     return
   }
@@ -29,4 +31,6 @@ func LoginHandler(wr http.ResponseWriter, req *http.Request) {
     SendError(wr, err)
     return
   }
+
+  log.Printf("Logged as " + userName)
 }
