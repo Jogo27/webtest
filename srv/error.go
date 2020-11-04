@@ -20,6 +20,9 @@ func (self HttpError) Error() string {
   return self.msg
 }
 
+// Send error to wr.
+// If err is an HttpError, its code and msg are used in the HTPP response.
+// Also log the error.
 func SendError(wr http.ResponseWriter, err error) {
   var pError HttpError
   if errors.As(err, &pError) {
