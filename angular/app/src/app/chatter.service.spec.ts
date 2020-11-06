@@ -1,4 +1,4 @@
-import { HttpClient, HttpResponse } from '@angular/common/http';
+import { HttpResponse } from '@angular/common/http';
 import { of } from 'rxjs';
 
 import { ChatterService } from './chatter.service';
@@ -19,7 +19,7 @@ describe('ChatterService', () => {
 
   it('does not log with getNewMessage', () => {
     httpSpy.get.and.returnValue(of(new HttpResponse({body: "Hi"})));
-    service.getNewMessage().subscribe(result => 0);
+    service.getNewMessage().subscribe(() => 0);
     expect(service.isLogged()).toBeFalse();
   });
 
