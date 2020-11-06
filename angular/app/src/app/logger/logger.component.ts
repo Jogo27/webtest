@@ -15,7 +15,7 @@ export class LoggerComponent implements OnInit {
   constructor(private service : ChatterService) { }
 
   logIn(): void {
-    this.service.logAs(this.login.value)
+    this.service.logAs(this.login.value).subscribe(() => 0)
   }
 
   ngOnInit(): void {
